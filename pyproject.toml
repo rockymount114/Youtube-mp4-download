@@ -1,0 +1,10 @@
+[project]
+name = "youtube-mp3"
+version = "0.1.0"
+description = "download youtube mp3 and mp4"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pytube>=15.0.0",
+    "yt-dlp>=2023.12.30",
+]
