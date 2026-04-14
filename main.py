@@ -147,12 +147,20 @@ def download_media(url, media_type):
         download_media_pytube(url, media_type)
 
 if __name__ == "__main__":
-    url = "https://youtu.be/WlDV-HejFPM"  # Removed playlist parameter
-    choice = input("Choose a format (1 for mp3, 2 for mp4) [default: 1]: ") or "1"
-
-    if choice == '1':
-        download_media(url, 'mp3')
-    elif choice == '2':
-        download_media(url, 'mp4')
+    import sys
+    
+    # Allow URL as command-line argument for non-interactive use
+    if len(sys.argv) > 1:
+        url = sys.argv[1]
+        media_type = sys.argv[2] if len(sys.argv) > 2 else 'mp3'
+        download_media(url, media_type)
     else:
-        print("Invalid choice. Please run the script again and choose '1' or '2'.")
+        url = input("Input Youtube url: ")
+        choice = input("Choose a format (1 for mp3, 2 for mp4) [default: 1]: ").strip() or "1"
+
+        if choice == '1':
+            download_media(url, 'mp3')
+        elif choice == '2':
+            download_media(url, 'mp4')
+        else:
+            print("Invalid choice. Please run the script again and choose '1' or '2'.")
