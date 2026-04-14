@@ -34,13 +34,18 @@ def download_media_ytdlp(url, media_type):
                 'audioquality': '32k',
             }
             print("Downloading audio with yt-dlp (32kbps MP3)...")
-            
+
         elif media_type == 'mp4':
             ydl_opts = {
                 'format': 'best[ext=mp4]/best',
                 'outtmpl': '%(title)s.%(ext)s',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '32',
+                }],
             }
-            print("Downloading video with yt-dlp...")
+            print("Downloading video with yt-dlp (MP4 + MP3 audio copy)...")
         else:
             print("Invalid media type specified.")
             return
@@ -109,13 +114,13 @@ def download_media_ytdlp_fallback(url, media_type):
                 'outtmpl': '%(title)s.%(ext)s',
             }
             print("Downloading audio as WebM (no conversion - FFmpeg not available)...")
-            
+
         elif media_type == 'mp4':
             ydl_opts = {
                 'format': 'best[ext=mp4]/best',
                 'outtmpl': '%(title)s.%(ext)s',
             }
-            print("Downloading video with yt-dlp...")
+            print("Downloading video with yt-dlp (MP4 only - no MP3 conversion)...")
         else:
             print("Invalid media type specified.")
             return
