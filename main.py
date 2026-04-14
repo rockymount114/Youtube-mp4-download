@@ -17,35 +17,136 @@ except ImportError:
         print("  pip install pytube  (fallback)")
         sys.exit(1)
 
-def download_media_ytdlp(url, media_type):
+def get_ytdlp_opts(media_type, use_cookies=False, cookie_file=None):
+    """Get yt-dlp options based on media type and cookie settings"""
+    opts = {
+        'outtmpl': '%(title)s.%(ext)s',
+    }
+    
+    if cookie_file and os.path.exists(cookie_file):
+        opts['cookiefile'] = cookie_file
+        print(f"Using cookies from: {cookie_file}")
+    
+    if media_type == 'mp3':
+        opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '32',
+            }],
+            'extractaudio': True,
+            'audioformat': 'mp3',
+            'audioquality': '32k',
+        })
+    elif media_type == 'mp4':
+        opts.update({
+            'format': 'bestvideo+bestaudio/best',
+            'merge_output_format': 'mp4',
+        })
+    
+    return opts
+
+def try_download_with_clients(url, ydl_opts):
+    """Try downloading with different client configurations"""
+    clients_to_try = [
+        {'player_client': ['web']},
+        {'player_client': ['web', 'tv', 'ios']},
+        {'player_client': ['web'], 'extractor_retries': 3},
+    ]
+    
+    for i, client_args in enumerate(clients_to_try):
+        opts = ydl_opts.copy()
+        if 'extractor_args' not in opts:
+            opts['extractor_args'] = {}
+        opts['extractor_args']['youtube'] = client_args
+        
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                return info
+        except Exception as e:
+            error_msg = str(e)
+            if "403" in error_msg or "not available" in error_msg.lower():
+                print(f"Client config {i+1} failed, trying next...")
+                continue
+            raise
+    
+    # Final attempt without extractor_args
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        return ydl.extract_info(url, download=True)
+
+def download_mp4_and_mp3(url, cookie_file=None):
+    """Download video (MP4), then use FFmpeg to extract MP3 from it"""
+    import subprocess
+
+    print("Step 1: Downloading video (MP4)...")
+    ydl_opts = get_ytdlp_opts('mp4', cookie_file=cookie_file)
+
+    try:
+        info = try_download_with_clients(url, ydl_opts)
+        video_title = info.get('title', 'video')
+        print(f"Video download complete: {video_title}")
+    except Exception as e:
+        print(f"Error downloading video: {e}")
+        print("\nIf you see HTTP 403 errors, you need browser cookies.")
+        print("Export cookies from your browser using a browser extension:")
+        print("  https://github.com/yt-dlp/yt-dlp#exporting-cookies")
+        print("Then run with: python main.py --cookies cookies.txt <url>")
+        return
+
+    # Find the downloaded MP4 file
+    mp4_file = f"{video_title}.mp4"
+    if not os.path.exists(mp4_file):
+        import glob
+        mp4_files = glob.glob(f"{video_title}*.mp4")
+        # Exclude partial downloads
+        mp4_files = [f for f in mp4_files if not f.endswith('.part') and not f.endswith('.ytdl')]
+        if mp4_files:
+            mp4_file = mp4_files[0]
+        else:
+            print(f"Error: Video file not found")
+            return
+
+    mp3_file = f"{video_title}.mp3"
+
+    print("\nStep 2: Converting MP4 to MP3 using FFmpeg...")
+    try:
+        cmd = [
+            os.path.join(os.path.dirname(__file__), 'ffmpeg.exe'),
+            '-i', mp4_file,
+            '-b:a', '32k',
+            '-y',
+            mp3_file
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"MP3 created: {mp3_file}")
+        else:
+            print(f"FFmpeg error: {result.stderr}")
+    except Exception as e:
+        print(f"Error extracting audio: {e}")
+        print(f"\nYou can manually convert using:")
+        print(f'  ffmpeg -i "{mp4_file}" -b:a 32k "{mp3_file}"')
+
+def download_media_ytdlp(url, media_type, cookie_file=None):
     """Download using yt-dlp (recommended)"""
     try:
         if media_type == 'mp3':
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '32',  # Set to 32kbps as requested
-                }],
-                'outtmpl': '%(title)s.%(ext)s',
-                'extractaudio': True,
-                'audioformat': 'mp3',
-                'audioquality': '32k',
-            }
+            ydl_opts = get_ytdlp_opts('mp3', cookie_file=cookie_file)
             print("Downloading audio with yt-dlp (32kbps MP3)...")
 
+            try:
+                info = try_download_with_clients(url, ydl_opts)
+            except Exception as e:
+                if "403" in str(e):
+                    print("\nHTTP 403 error - try exporting browser cookies")
+                raise
+            print("Download complete!")
+
         elif media_type == 'mp4':
-            ydl_opts = {
-                'format': 'best[ext=mp4]/best',
-                'outtmpl': '%(title)s.%(ext)s',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '32',
-                }],
-            }
-            print("Downloading video with yt-dlp (MP4 + MP3 audio copy)...")
+            download_mp4_and_mp3(url, cookie_file=cookie_file)
+            return
         else:
             print("Invalid media type specified.")
             return
@@ -132,16 +233,16 @@ def download_media_ytdlp_fallback(url, media_type):
     except Exception as e:
         print(f"Error with yt-dlp fallback: {e}")
 
-def download_media(url, media_type):
+def download_media(url, media_type, cookie_file=None):
     # Remove playlist parameter if present
     if '&list=' in url:
         url = url.split('&list=')[0]
     elif '?list=' in url:
         url = url.split('?list=')[0]
-    
+
     if USE_YT_DLP:
         try:
-            download_media_ytdlp(url, media_type)
+            download_media_ytdlp(url, media_type, cookie_file=cookie_file)
         except Exception as e:
             if "ffmpeg" in str(e).lower() and media_type == 'mp3':
                 print("\nTrying fallback without MP3 conversion...")
@@ -152,20 +253,28 @@ def download_media(url, media_type):
         download_media_pytube(url, media_type)
 
 if __name__ == "__main__":
-    import sys
-    
-    # Allow URL as command-line argument for non-interactive use
-    if len(sys.argv) > 1:
-        url = sys.argv[1]
-        media_type = sys.argv[2] if len(sys.argv) > 2 else 'mp3'
-        download_media(url, media_type)
+    import argparse
+
+    parser = argparse.ArgumentParser(description='YouTube Video/Audio Downloader')
+    parser.add_argument('url', nargs='?', help='YouTube video URL')
+    parser.add_argument('format', nargs='?', choices=['mp3', 'mp4'], default=None, help='Output format')
+    parser.add_argument('--cookies', help='Path to cookies.txt file (Netscape format)')
+
+    args = parser.parse_args()
+
+    if args.url:
+        url = args.url
+        media_type = args.format if args.format else 'mp3'
     else:
         url = input("Input Youtube url: ")
         choice = input("Choose a format (1 for mp3, 2 for mp4) [default: 1]: ").strip() or "1"
+        media_type = 'mp3' if choice == '1' else 'mp4'
 
-        if choice == '1':
-            download_media(url, 'mp3')
-        elif choice == '2':
-            download_media(url, 'mp4')
-        else:
-            print("Invalid choice. Please run the script again and choose '1' or '2'.")
+    cookie_file = args.cookies
+
+    if media_type == 'mp3':
+        download_media(url, 'mp3', cookie_file=cookie_file)
+    elif media_type == 'mp4':
+        download_media(url, 'mp4', cookie_file=cookie_file)
+    else:
+        print("Invalid choice.")
