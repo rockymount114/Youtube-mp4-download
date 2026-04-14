@@ -1,5 +1,6 @@
 *.mp3
-
+*.mp4
+*.avi
 .venv/
 __pycache__/
 *.pyc
