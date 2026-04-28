@@ -17,16 +17,28 @@ except ImportError:
         print("  pip install pytube  (fallback)")
         sys.exit(1)
 
-def get_ytdlp_opts(media_type, use_cookies=False, cookie_file=None):
+def get_ytdlp_opts(media_type, use_cookies=False, cookie_file=None, cookies_from_browser=None, po_token=None):
     """Get yt-dlp options based on media type and cookie settings"""
     opts = {
         'outtmpl': '%(title)s.%(ext)s',
+        'quiet': False,
+        'no_warnings': False,
     }
-    
-    if cookie_file and os.path.exists(cookie_file):
+
+    if cookies_from_browser:
+        opts['cookiesfrombrowser'] = (cookies_from_browser,)
+        print(f"Using cookies from browser: {cookies_from_browser}")
+    elif cookie_file and os.path.exists(cookie_file):
         opts['cookiefile'] = cookie_file
         print(f"Using cookies from: {cookie_file}")
     
+    if po_token:
+        if 'extractor_args' not in opts:
+            opts['extractor_args'] = {'youtube': {}}
+        # Some yt-dlp versions expect a list or a single string
+        opts['extractor_args']['youtube']['po_token'] = [po_token]
+        print(f"Using provided PO Token")
+
     if media_type == 'mp3':
         opts.update({
             'format': 'bestaudio/best',
@@ -48,74 +60,100 @@ def get_ytdlp_opts(media_type, use_cookies=False, cookie_file=None):
     return opts
 
 def try_download_with_clients(url, ydl_opts):
-    """Try downloading with different client configurations"""
+    """Try downloading with different client configurations to bypass DRM/Bot detection"""
+    # Priority order: android is currently most resilient, followed by web and ios
+    # We avoid 'tv' as it often triggers DRM protection experiments
     clients_to_try = [
+        {'player_client': ['android']},
         {'player_client': ['web']},
-        {'player_client': ['web', 'tv', 'ios']},
-        {'player_client': ['web'], 'extractor_retries': 3},
+        {'player_client': ['ios']},
+        {'player_client': ['mweb']},
+        {'player_client': ['web', 'ios']},
     ]
     
+    last_error = ""
     for i, client_args in enumerate(clients_to_try):
         opts = ydl_opts.copy()
         if 'extractor_args' not in opts:
             opts['extractor_args'] = {}
-        opts['extractor_args']['youtube'] = client_args
+        
+        # Ensure we don't overwrite existing youtube extractor args like po_token
+        yt_args = opts['extractor_args'].get('youtube', {}).copy()
+        yt_args.update(client_args)
+        opts['extractor_args']['youtube'] = yt_args
+        
+        client_name = ", ".join(client_args['player_client'])
+        print(f"Attempting download with client(s): {client_name}...")
         
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return info
+                return ydl.extract_info(url, download=True)
         except Exception as e:
-            error_msg = str(e)
-            if "403" in error_msg or "not available" in error_msg.lower():
-                print(f"Client config {i+1} failed, trying next...")
+            last_error = str(e)
+            print(f"Client {client_name} failed: {last_error.split(':')[-1].strip()}")
+            
+            # If it's a DRM error or 403, try next client
+            if any(msg in last_error.lower() for msg in ["drm", "403", "not available", "po token", "requested format"]):
                 continue
-            raise
+            # For other errors, we still try next client as it might be client-specific
+            continue
     
-    # Final attempt without extractor_args
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(url, download=True)
+    # Final attempt with default settings if all specific clients fail
+    print("All specific client attempts failed. Making one final attempt with default settings...")
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            return ydl.extract_info(url, download=True)
+    except Exception as e:
+        raise Exception(f"Failed to download after multiple attempts. Last error: {e}")
 
-def download_mp4_and_mp3(url, cookie_file=None):
+def download_mp4_and_mp3(url, cookie_file=None, cookies_from_browser=None, po_token=None):
     """Download video (MP4), then use FFmpeg to extract MP3 from it"""
     import subprocess
 
     print("Step 1: Downloading video (MP4)...")
-    ydl_opts = get_ytdlp_opts('mp4', cookie_file=cookie_file)
+    ydl_opts = get_ytdlp_opts('mp4', cookie_file=cookie_file, cookies_from_browser=cookies_from_browser, po_token=po_token)
 
     try:
         info = try_download_with_clients(url, ydl_opts)
         video_title = info.get('title', 'video')
+        video_ext = info.get('ext', 'mp4')
         print(f"Video download complete: {video_title}")
     except Exception as e:
         print(f"Error downloading video: {e}")
-        print("\nIf you see HTTP 403 errors, you need browser cookies.")
-        print("Export cookies from your browser using a browser extension:")
-        print("  https://github.com/yt-dlp/yt-dlp#exporting-cookies")
-        print("Then run with: python main.py --cookies cookies.txt <url>")
+        print("\nTroubleshooting Tips:")
+        print("1. Export browser cookies: python main.py --cookies cookies.txt <url>")
+        print("2. Provide cookies from browser: python main.py --cookies-from-browser chrome <url>")
+        print("3. Use a PO Token: python main.py --po-token <token> <url>")
+        print("4. Update yt-dlp: pip install -U yt-dlp")
         return
 
     # Find the downloaded MP4 file
-    mp4_file = f"{video_title}.mp4"
+    mp4_file = f"{video_title}.{video_ext}"
     if not os.path.exists(mp4_file):
         import glob
-        mp4_files = glob.glob(f"{video_title}*.mp4")
-        # Exclude partial downloads
+        # Try to find file by title, removing problematic characters
+        safe_title = "".join([c for c in video_title if c.isalnum() or c in " .-_"]).strip()
+        mp4_files = glob.glob(f"*{safe_title}*.{video_ext}")
         mp4_files = [f for f in mp4_files if not f.endswith('.part') and not f.endswith('.ytdl')]
         if mp4_files:
             mp4_file = mp4_files[0]
         else:
-            print(f"Error: Video file not found")
+            print(f"Error: Downloaded file not found as {mp4_file}")
             return
 
-    mp3_file = f"{video_title}.mp3"
+    mp3_file = os.path.splitext(mp4_file)[0] + ".mp3"
 
-    print("\nStep 2: Converting MP4 to MP3 using FFmpeg...")
+    print(f"\nStep 2: Converting {mp4_file} to MP3 using FFmpeg...")
     try:
+        ffmpeg_exe = os.path.join(os.path.dirname(__file__), 'ffmpeg.exe')
+        if not os.path.exists(ffmpeg_exe):
+            ffmpeg_exe = 'ffmpeg' # Fallback to system ffmpeg
+
         cmd = [
-            os.path.join(os.path.dirname(__file__), 'ffmpeg.exe'),
+            ffmpeg_exe,
             '-i', mp4_file,
             '-b:a', '32k',
+            '-vn',
             '-y',
             mp3_file
         ]
@@ -126,49 +164,37 @@ def download_mp4_and_mp3(url, cookie_file=None):
             print(f"FFmpeg error: {result.stderr}")
     except Exception as e:
         print(f"Error extracting audio: {e}")
-        print(f"\nYou can manually convert using:")
-        print(f'  ffmpeg -i "{mp4_file}" -b:a 32k "{mp3_file}"')
 
-def download_media_ytdlp(url, media_type, cookie_file=None):
+def download_media_ytdlp(url, media_type, cookie_file=None, cookies_from_browser=None, po_token=None):
     """Download using yt-dlp (recommended)"""
     try:
         if media_type == 'mp3':
-            ydl_opts = get_ytdlp_opts('mp3', cookie_file=cookie_file)
+            ydl_opts = get_ytdlp_opts('mp3', cookie_file=cookie_file, cookies_from_browser=cookies_from_browser, po_token=po_token)
             print("Downloading audio with yt-dlp (32kbps MP3)...")
-
             try:
-                info = try_download_with_clients(url, ydl_opts)
+                try_download_with_clients(url, ydl_opts)
             except Exception as e:
                 if "403" in str(e):
-                    print("\nHTTP 403 error - try exporting browser cookies")
+                    print("\nHTTP 403 error - try exporting browser cookies or providing a PO Token")
                 raise
             print("Download complete!")
 
         elif media_type == 'mp4':
-            download_mp4_and_mp3(url, cookie_file=cookie_file)
+            download_mp4_and_mp3(url, cookie_file=cookie_file, cookies_from_browser=cookies_from_browser, po_token=po_token)
             return
         else:
             print("Invalid media type specified.")
             return
             
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-            print("Download complete!")
-            
     except Exception as e:
         print(f"Error with yt-dlp: {e}")
         if "ffmpeg" in str(e).lower():
             print("\nFFmpeg is required for MP3 conversion!")
-            print("Please install FFmpeg:")
-            print("- Windows: Download from https://ffmpeg.org/download.html")
-            print("- macOS: brew install ffmpeg")
-            print("- Linux: sudo apt install ffmpeg")
-            print("\nAlternatively, try downloading as WebM (audio only) without conversion.")
+            print("Please ensure ffmpeg.exe is in the project directory.")
 
 def download_media_pytube(url, media_type):
     """Download using pytube (fallback)"""
     try:
-        # Add user agent to help with 400 errors
         yt = YouTube(url, use_oauth=False, allow_oauth_cache=True)
         
         if media_type == 'mp3':
@@ -188,7 +214,6 @@ def download_media_pytube(url, media_type):
         elif media_type == 'mp4':
             stream = yt.streams.filter(progressive=True, file_extension='mp4').first()
             if not stream:
-                # Try getting the best available stream
                 stream = yt.streams.filter(file_extension='mp4').first()
             if not stream:
                 print("No video stream found!")
@@ -201,39 +226,8 @@ def download_media_pytube(url, media_type):
             
     except Exception as e:
         print(f"Error with pytube: {e}")
-        print("Possible solutions:")
-        print("1. Try updating pytube: pip install --upgrade pytube")
-        print("2. Install yt-dlp instead: pip install yt-dlp")
-        print("3. Check if the URL is valid and accessible")
 
-def download_media_ytdlp_fallback(url, media_type):
-    """Download using yt-dlp without FFmpeg conversion (WebM format)"""
-    try:
-        if media_type == 'mp3':
-            ydl_opts = {
-                'format': 'bestaudio[ext=webm]/bestaudio',
-                'outtmpl': '%(title)s.%(ext)s',
-            }
-            print("Downloading audio as WebM (no conversion - FFmpeg not available)...")
-
-        elif media_type == 'mp4':
-            ydl_opts = {
-                'format': 'best[ext=mp4]/best',
-                'outtmpl': '%(title)s.%(ext)s',
-            }
-            print("Downloading video with yt-dlp (MP4 only - no MP3 conversion)...")
-        else:
-            print("Invalid media type specified.")
-            return
-            
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-            print("Download complete! (Note: Audio saved as WebM format)")
-            
-    except Exception as e:
-        print(f"Error with yt-dlp fallback: {e}")
-
-def download_media(url, media_type, cookie_file=None):
+def download_media(url, media_type, cookie_file=None, cookies_from_browser=None, po_token=None):
     # Remove playlist parameter if present
     if '&list=' in url:
         url = url.split('&list=')[0]
@@ -242,11 +236,18 @@ def download_media(url, media_type, cookie_file=None):
 
     if USE_YT_DLP:
         try:
-            download_media_ytdlp(url, media_type, cookie_file=cookie_file)
+            download_media_ytdlp(url, media_type, cookie_file=cookie_file, cookies_from_browser=cookies_from_browser, po_token=po_token)
         except Exception as e:
             if "ffmpeg" in str(e).lower() and media_type == 'mp3':
-                print("\nTrying fallback without MP3 conversion...")
-                download_media_ytdlp_fallback(url, media_type)
+                print("\nTrying fallback without MP3 conversion (WebM)...")
+                ydl_opts = {
+                    'format': 'bestaudio[ext=webm]/bestaudio',
+                    'outtmpl': '%(title)s.%(ext)s',
+                }
+                if po_token:
+                    ydl_opts['extractor_args'] = {'youtube': {'po_token': [po_token]}}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
             else:
                 raise e
     else:
@@ -259,6 +260,8 @@ if __name__ == "__main__":
     parser.add_argument('url', nargs='?', help='YouTube video URL')
     parser.add_argument('format', nargs='?', choices=['mp3', 'mp4'], default=None, help='Output format')
     parser.add_argument('--cookies', help='Path to cookies.txt file (Netscape format)')
+    parser.add_argument('--cookies-from-browser', dest='browser', help='Browser name to extract cookies from (e.g., chrome, firefox, edge)')
+    parser.add_argument('--po-token', help='Proof of Origin Token (GVS PO Token)')
 
     args = parser.parse_args()
 
@@ -271,10 +274,7 @@ if __name__ == "__main__":
         media_type = 'mp3' if choice == '1' else 'mp4'
 
     cookie_file = args.cookies
+    cookies_from_browser = args.browser
+    po_token = args.po_token
 
-    if media_type == 'mp3':
-        download_media(url, 'mp3', cookie_file=cookie_file)
-    elif media_type == 'mp4':
-        download_media(url, 'mp4', cookie_file=cookie_file)
-    else:
-        print("Invalid choice.")
+    download_media(url, media_type, cookie_file=cookie_file, cookies_from_browser=cookies_from_browser, po_token=po_token)

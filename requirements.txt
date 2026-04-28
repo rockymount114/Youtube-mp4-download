@@ -2,5 +2,5 @@
 #    uv pip compile pyproject.toml -o requirements.txt
 pytube==15.0.0
     # via youtube-mp3 (pyproject.toml)
-yt-dlp==2025.10.22
+yt-dlp==2026.3.17
     # via youtube-mp3 (pyproject.toml)
