@@ -1,33 +1,53 @@
-# YouTube Video Downloader
+# Meeting Intelligence Application
 
-This project is a simple YouTube video downloader. It uses the `pytube` library to download videos from YouTube. The main script is `main.py`.
+A Flask-based application for transcribing and analyzing meeting recordings using Faster-Whisper and Ollama.
 
-## Running the code
+## Setup Instructions
 
-To run the code, execute the following command in your terminal:
+1.  **Install Dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-```bash
-python main.py
-```
+2.  **Environment Variables:**
+    Copy `.env.example` to `.env` and fill in your credentials.
+    ```bash
+    cp .env.example .env
+    ```
 
-The script will then prompt you to enter a YouTube video URL.
+3.  **Database Setup:**
+    Ensure you have an MSSQL server running and the `DATABASE_URL` in `.env` is correct. The application will create the tables automatically on first run.
 
-## Dependencies
+4.  **Run the Application:**
+    Open two terminals:
+    
+    Terminal 1 (Web Server):
+    ```bash
+    python run.py
+    ```
+    
+    Terminal 2 (Background Worker):
+    ```bash
+    python worker.py
+    ```
 
-This project has the following dependency:
+5.  **Access the Dashboard:**
+    Open `http://127.0.0.1:5000` in your browser.
+    Default login: `admin / admin123`
 
-*   `pytube`
+## Features
 
-This is listed in the `pyproject.toml` file.
+- **Audio Upload:** Supports mp3, wav, and m4a.
+- **Automated Transcription:** Uses `faster-whisper` (medium model by default).
+- **AI Analysis:** Uses local Ollama server to generate:
+  - Professional meeting minutes
+  - Action items (Task, Owner, Due Date)
+  - Motions and Votes
+  - Budget Discussion summaries
+- **Dashboard:** Overview of meeting processing status.
 
-## Converting to MP3
+## Technology Stack
 
-The following commands can be used to convert the downloaded video files to MP3 format using `ffmpeg`:
-
-```
-.\ffmpeg -i "三国1-12集.mp4" -vn -c:a libmp3lame -b:a 32k "三国1-12集.mp3" 
-.\ffmpeg -i "三国13-23集.mp4" -vn -c:a libmp3lame -b:a 32k "三国13-23集.mp3" 
-.\ffmpeg -i "三国24-36集.mp4" -vn -c:a libmp3lame -b:a 32k "三国24-36集.mp3" 
-.\ffmpeg -i "三国37-45集.mp4" -vn -c:a libmp3lame -b:a 32k "三国37-45集.mp3" 
-.\ffmpeg -i "三国46-52集.mp4" -vn -c:a libmp3lame -b:a 32k "三国46-52集.mp3" 
-```
+- **Backend:** Flask, SQLAlchemy, MSSQL
+- **AI:** Faster-Whisper, Ollama
+- **Frontend:** Tailwind CSS, Jinja2

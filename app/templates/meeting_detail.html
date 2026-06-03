@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-8 flex justify-between items-start">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900">{{ meeting.title }}</h1>
+        <p class="text-gray-500">Meeting Date: {{ meeting.meeting_date.strftime('%B %d, %Y') }}</p>
+    </div>
+    <div class="flex space-x-2">
+        <span class="px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+            Status: {{ meeting.status }}
+        </span>
+    </div>
+</div>
+
+<div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+    <!-- Tabs Navigation -->
+    <div class="border-b border-gray-200">
+        <nav class="-mb-px flex" aria-label="Tabs">
+            <button onclick="openTab(event, 'transcript')" class="tab-link border-blue-500 text-blue-600 w-1/5 py-4 px-1 text-center border-b-2 font-medium text-sm">
+                Transcript
+            </button>
+            <button onclick="openTab(event, 'summary')" class="tab-link border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 w-1/5 py-4 px-1 text-center border-b-2 font-medium text-sm">
+                Summary
+            </button>
+            <button onclick="openTab(event, 'action_items')" class="tab-link border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 w-1/5 py-4 px-1 text-center border-b-2 font-medium text-sm">
+                Action Items
+            </button>
+            <button onclick="openTab(event, 'motions')" class="tab-link border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 w-1/5 py-4 px-1 text-center border-b-2 font-medium text-sm">
+                Motions
+            </button>
+            <button onclick="openTab(event, 'budget')" class="tab-link border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 w-1/5 py-4 px-1 text-center border-b-2 font-medium text-sm">
+                Budget Notes
+            </button>
+        </nav>
+    </div>
+
+    <!-- Tab Contents -->
+    <div class="p-6">
+        <!-- Transcript Tab -->
+        <div id="transcript" class="tab-content block">
+            {% if meeting.transcript %}
+                <div class="prose max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {{ meeting.transcript }}
+                </div>
+            {% else %}
+                <div class="text-center py-12 text-gray-500">
+                    <p>Transcript is currently being generated...</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Summary Tab -->
+        <div id="summary" class="tab-content hidden">
+            {% if meeting.summary %}
+                <div class="prose max-w-none text-gray-700">
+                    {{ meeting.summary | safe }}
+                </div>
+            {% else %}
+                <div class="text-center py-12 text-gray-500">
+                    <p>AI Summary will appear here once analysis is complete.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Action Items Tab -->
+        <div id="action_items" class="tab-content hidden">
+            {% if meeting.action_items %}
+                <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                    <table class="min-w-full divide-y divide-gray-300">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Task</th>
+                                <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Owner</th>
+                                <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Due Date</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 bg-white">
+                            {% for item in meeting.action_items %}
+                            <tr>
+                                <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">{{ item.task }}</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ item.owner }}</td>
+                                <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{{ item.due_date }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-12 text-gray-500">
+                    <p>Action items will appear here after AI analysis.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Motions Tab -->
+        <div id="motions" class="tab-content hidden">
+            {% if meeting.motions %}
+                <div class="space-y-4">
+                    {% for motion in meeting.motions %}
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <p class="font-semibold text-gray-900">{{ motion.motion }}</p>
+                        <div class="mt-2 grid grid-cols-2 gap-4 text-sm text-gray-600">
+                            <div><span class="font-medium">Moved By:</span> {{ motion.moved_by }}</div>
+                            <div><span class="font-medium">Seconded By:</span> {{ motion.seconded_by }}</div>
+                            <div class="col-span-2"><span class="font-medium">Result:</span> <span class="text-blue-600 font-bold">{{ motion.result }}</span></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-12 text-gray-500">
+                    <p>Motions and votes will appear here after AI analysis.</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Budget Tab -->
+        <div id="budget" class="tab-content hidden">
+            {% if meeting.budget_notes %}
+                <div class="prose max-w-none text-gray-700">
+                    {{ meeting.budget_notes | safe }}
+                </div>
+            {% else %}
+                <div class="text-center py-12 text-gray-500">
+                    <p>Budget discussion notes will appear here after AI analysis.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+    function openTab(evt, tabName) {
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tab-content");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].classList.add("hidden");
+            tabcontent[i].classList.remove("block");
+        }
+        tablinks = document.getElementsByClassName("tab-link");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].classList.remove("border-blue-500", "text-blue-600");
+            tablinks[i].classList.add("border-transparent", "text-gray-500");
+        }
+        document.getElementById(tabName).classList.remove("hidden");
+        document.getElementById(tabName).classList.add("block");
+        evt.currentTarget.classList.add("border-blue-500", "text-blue-600");
+        evt.currentTarget.classList.remove("border-transparent", "text-gray-500");
+    }
+</script>
+{% endblock %}
