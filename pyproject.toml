@@ -5,7 +5,14 @@ description = "download youtube mp3 and mp4"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
+    "faster-whisper>=1.1.0",
+    "flask>=3.0.3",
+    "flask-login>=0.6.3",
+    "flask-sqlalchemy>=3.1.1",
+    "pyodbc>=5.2.0",
+    "python-dotenv>=1.0.1",
     "pytube>=15.0.0",
+    "requests>=2.32.4",
     "whisper>=1.1.10",
     "yt-dlp>=2023.12.30",
 ]
