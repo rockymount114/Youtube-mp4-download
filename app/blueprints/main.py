@@ -140,6 +140,15 @@ def process_meeting(id):
     flash(f'Processing restarted for: {meeting.title}')
     return redirect(url_for('main.meeting_list'))
 
+@main.route('/meeting/status/<int:id>')
+@login_required
+def meeting_status(id):
+    meeting = Meeting.query.get_or_404(id)
+    return jsonify({
+        'status': meeting.status,
+        'progress': meeting.progress
+    })
+
 @main.route('/meeting/<int:id>')
 @login_required
 def meeting_detail(id):

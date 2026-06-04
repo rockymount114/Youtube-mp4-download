@@ -22,6 +22,7 @@ class Meeting(db.Model):
     motions = db.Column(db.JSON, nullable=True)
     budget_notes = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(100), default='Pending') # Pending, Transcribing, Transcribed, Analyzing, Analyzed, Error
+    progress = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):

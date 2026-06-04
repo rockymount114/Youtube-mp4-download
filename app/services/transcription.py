@@ -10,6 +10,7 @@ def transcribe_meeting(meeting_id):
         return
     
     meeting.status = 'Transcribing'
+    meeting.progress = 5
     db.session.commit()
     
     try:
@@ -19,10 +20,24 @@ def transcribe_meeting(meeting_id):
         model = WhisperModel("medium", device="cpu", compute_type="int8")
         
         segments, info = model.transcribe(audio_path, beam_size=5)
-        transcript = " ".join([segment.text for segment in segments])
+        
+        duration = info.duration
+        transcript_parts = []
+        
+        for segment in segments:
+            transcript_parts.append(segment.text)
+            # Update progress (0-70% for transcription)
+            if duration > 0:
+                current_progress = int((segment.end / duration) * 65) + 5
+                if current_progress > meeting.progress:
+                    meeting.progress = min(current_progress, 70)
+                    db.session.commit()
+        
+        transcript = " ".join(transcript_parts)
         
         meeting.transcript = transcript
         meeting.status = 'Transcribed'
+        meeting.progress = 70
         db.session.commit()
         
         # Save transcript to text file as well

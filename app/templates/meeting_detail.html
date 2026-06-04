@@ -6,10 +6,19 @@
         <h1 class="text-2xl font-bold text-gray-900">{{ meeting.title }}</h1>
         <p class="text-gray-500">Meeting Date: {{ meeting.meeting_date.strftime('%B %d, %Y') }}</p>
     </div>
-    <div class="flex space-x-2">
-        <span class="px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+    <div class="flex flex-col items-end space-y-2">
+        <span id="status-badge" class="px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full 
+            {% if meeting.status == 'Analyzed' %}bg-green-100 text-green-800
+            {% elif meeting.status == 'Error' %}bg-red-100 text-red-800
+            {% else %}bg-blue-100 text-blue-800{% endif %}">
             Status: {{ meeting.status }}
         </span>
+        {% if meeting.status not in ['Analyzed', 'Error'] %}
+        <div id="progress-container" class="w-64 bg-gray-200 rounded-full h-2.5 mt-2">
+            <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: {{ meeting.progress }}%"></div>
+            <p id="progress-text" class="text-xs text-gray-500 mt-1 text-right">{{ meeting.progress }}% Complete</p>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -148,5 +157,43 @@
         evt.currentTarget.classList.add("border-blue-500", "text-blue-600");
         evt.currentTarget.classList.remove("border-transparent", "text-gray-500");
     }
+
+    // Polling logic for status and progress
+    const meetingId = {{ meeting.id }};
+    const statusBadge = document.getElementById('status-badge');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const progressContainer = document.getElementById('progress-container');
+
+    let pollInterval = null;
+
+    function pollStatus() {
+        fetch(`/meeting/status/${meetingId}`)
+            .then(response => response.json())
+            .then(data => {
+                statusBadge.textContent = `Status: ${data.status}`;
+                
+                if (data.status === 'Analyzed') {
+                    statusBadge.className = 'px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full bg-green-100 text-green-800';
+                    if (progressContainer) progressContainer.style.display = 'none';
+                    clearInterval(pollInterval);
+                    // Reload page to show new data
+                    setTimeout(() => window.location.reload(), 1000);
+                } else if (data.status === 'Error') {
+                    statusBadge.className = 'px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full bg-red-100 text-red-800';
+                    if (progressContainer) progressContainer.style.display = 'none';
+                    clearInterval(pollInterval);
+                } else {
+                    statusBadge.className = 'px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full bg-blue-100 text-blue-800';
+                    if (progressBar) progressBar.style.width = `${data.progress}%`;
+                    if (progressText) progressText.textContent = `${data.progress}% Complete`;
+                }
+            })
+            .catch(error => console.error('Error polling status:', error));
+    }
+
+    {% if meeting.status not in ['Analyzed', 'Error'] %}
+    pollInterval = setInterval(pollStatus, 3000);
+    {% endif %}
 </script>
 {% endblock %}

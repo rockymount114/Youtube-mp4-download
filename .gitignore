@@ -34,3 +34,6 @@ htmlcov/
 *.db
 *.sqlite
 *.mp3
+
+# upload/audio/*.mp3
+# upload/video/*.mp4
