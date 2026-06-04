@@ -7,10 +7,24 @@ app = create_app()
 
 if __name__ == '__main__':
     with app.app_context():
-        # Refresh schema to fix column length issues
-        print("Refreshing database schema...")
-        db.drop_all()
+        # Ensure tables exist
+        print("Initializing database...")
         db.create_all()
+        
+        # Safely add 'progress' column if it doesn't exist (to avoid drop_all)
+        try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+            columns = [c['name'] for c in inspector.get_columns('meetings')]
+            if 'progress' not in columns:
+                print("Adding 'progress' column to meetings table...")
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE meetings ADD progress INT DEFAULT 0"))
+                    conn.commit()
+                print("Column added successfully.")
+        except Exception as e:
+            print(f"Note: Could not automatically update schema: {e}")
+            print("If the progress bar doesn't work, you may need to manually add the 'progress' column.")
         
         # Create a default user if none exists
         if User.query.filter_by(username='admin').first() is None:

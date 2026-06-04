@@ -20,25 +20,43 @@ def analyze_meeting(meeting_id):
         print(f"Analyzing meeting: {meeting.title}")
         
         # 1. Generate Summary
-        summary_prompt = f"Create professional meeting minutes from the transcript.\n\nInclude:\n- Meeting overview\n- Key discussion points\n- Decisions made\n\nTranscript:\n{meeting.transcript}"
+        summary_prompt = (
+            f"Create professional meeting minutes from the following transcript of a City Council meeting.\n\n"
+            f"Include:\n- Meeting overview\n- Key discussion points\n- Decisions made\n\n"
+            f"Transcript:\n{meeting.transcript}"
+        )
         meeting.summary = call_ollama(summary_prompt)
         meeting.progress = 82
         db.session.commit()
         
         # 2. Extract Action Items
-        action_prompt = f"Extract all action items from the transcript.\n\nReturn ONLY JSON in this format: [{{'task':'', 'owner':'', 'due_date':''}}]\n\nTranscript:\n{meeting.transcript}"
+        action_prompt = (
+            f"Extract all action items from the following transcript.\n\n"
+            f"Return ONLY valid JSON in this format: [{{'task':'', 'owner':'', 'due_date':''}}]\n"
+            f"Use empty strings if info is missing.\n\n"
+            f"Transcript:\n{meeting.transcript}"
+        )
         meeting.action_items = call_ollama_json(action_prompt)
         meeting.progress = 89
         db.session.commit()
         
         # 3. Extract Motions
-        motion_prompt = f"Extract all motions and votes from the transcript.\n\nReturn ONLY JSON in this format: [{{'motion':'', 'moved_by':'', 'seconded_by':'', 'result':''}}]\n\nTranscript:\n{meeting.transcript}"
+        motion_prompt = (
+            f"Extract all motions and votes from the following transcript.\n\n"
+            f"Return ONLY valid JSON in this format: [{{'motion':'', 'moved_by':'', 'seconded_by':'', 'result':''}}]\n"
+            f"Include who moved, who seconded, and if it passed or failed.\n\n"
+            f"Transcript:\n{meeting.transcript}"
+        )
         meeting.motions = call_ollama_json(motion_prompt)
         meeting.progress = 96
         db.session.commit()
         
         # 4. Budget Discussion
-        budget_prompt = f"Summarize any budget discussions, department requests, or financial impacts mentioned in the transcript.\n\nTranscript:\n{meeting.transcript}"
+        budget_prompt = (
+            f"Summarize any budget discussions, department requests, or financial impacts mentioned in the following transcript.\n"
+            f"Be specific about dollar amounts or department names if mentioned.\n\n"
+            f"Transcript:\n{meeting.transcript}"
+        )
         meeting.budget_notes = call_ollama(budget_prompt)
         
         meeting.status = 'Analyzed'
