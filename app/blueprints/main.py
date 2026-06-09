@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 try:
     from yt_dlp import YoutubeDL
 except ImportError:
@@ -11,6 +13,22 @@ from ..models import Meeting, db
 from datetime import datetime
 
 main = Blueprint('main', __name__)
+
+def start_worker():
+    try:
+        # Get the path to worker.py in the root directory
+        root_dir = os.path.abspath(os.path.join(current_app.root_path, '..'))
+        worker_path = os.path.join(root_dir, 'worker.py')
+        
+        if os.path.exists(worker_path):
+            # Start worker.py as a background process with the project root as CWD
+            subprocess.Popen([sys.executable, worker_path], cwd=root_dir)
+            return True
+        else:
+            print(f"Worker script not found at {worker_path}")
+    except Exception as e:
+        print(f"Failed to start worker: {e}")
+    return False
 
 @main.route('/')
 @login_required
@@ -25,6 +43,15 @@ def dashboard():
                            pending=pending, 
                            transcribed=transcribed, 
                            analyzed=analyzed)
+
+@main.route('/start_worker_manual', methods=['POST'])
+@login_required
+def start_worker_manual():
+    if start_worker():
+        flash('Background worker started.')
+    else:
+        flash('Failed to start worker. Please check server logs.', 'error')
+    return redirect(url_for('main.dashboard'))
 
 @main.route('/meetings')
 @login_required
@@ -95,7 +122,10 @@ def upload():
         db.session.add(new_meeting)
         db.session.commit()
         
-        flash('Meeting added successfully. Processing will begin shortly.')
+        # Trigger worker
+        start_worker()
+        
+        flash('Meeting added successfully. Processing has started.')
         return redirect(url_for('main.meeting_list'))
         
     return render_template('upload.html')
@@ -134,10 +164,15 @@ def fetch_youtube_info():
 def process_meeting(id):
     meeting = Meeting.query.get_or_404(id)
     meeting.status = 'Pending'
-    # Reset transcription and analysis results if they exist?
-    # For now, just setting status to Pending will trigger the worker
+    meeting.progress = 0
     db.session.commit()
-    flash(f'Processing restarted for: {meeting.title}')
+    
+    # Trigger worker
+    if start_worker():
+        flash(f'Processing started for: {meeting.title}')
+    else:
+        flash(f'Status reset to Pending for: {meeting.title}. Please ensure worker is running.')
+        
     return redirect(url_for('main.meeting_list'))
 
 @main.route('/meeting/status/<int:id>')

@@ -1,9 +1,21 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="mb-8">
-    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-    <p class="text-gray-500">Welcome to the Meeting Intelligence portal.</p>
+<div class="mb-8 flex justify-between items-center">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <p class="text-gray-500">Welcome to the Meeting Intelligence portal.</p>
+    </div>
+    <div>
+        <form action="{{ url_for('main.start_worker_manual') }}" method="POST">
+            <button type="submit" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <svg class="-ml-1 mr-2 h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Start Background Worker
+            </button>
+        </form>
+    </div>
 </div>
 
 <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
