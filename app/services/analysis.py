@@ -42,12 +42,25 @@ def analyze_meeting(meeting_id):
         
         # 3. Extract Motions
         motion_prompt = (
-            f"Extract all motions and votes from the following transcript.\n\n"
-            f"Return ONLY valid JSON in this format: [{{'motion':'', 'moved_by':'', 'seconded_by':'', 'result':''}}]\n"
-            f"Include who moved, who seconded, and if it passed or failed.\n\n"
+            f"You are a legal clerk. Extract all formal motions and votes from the following City Council transcript.\n\n"
+            f"Return ONLY a JSON list of objects. Each object MUST have these keys: 'motion', 'moved_by', 'seconded_by', 'result'.\n"
+            f"Example format: [{{'motion':'To approve the minutes', 'moved_by':'Councilman Smith', 'seconded_by':'Councilwoman Jones', 'result':'Passed 5-0'}}]\n\n"
+            f"If NO motions are found, return an empty list [].\n"
+            f"Do not include any other text or explanation.\n\n"
             f"Transcript:\n{meeting.transcript}"
         )
-        meeting.motions = call_ollama_json(motion_prompt)
+        motions_data = call_ollama_json(motion_prompt)
+        # Ensure it's a list
+        if isinstance(motions_data, dict):
+            # If AI returned a single object instead of a list
+            if 'motion' in motions_data:
+                motions_data = [motions_data]
+            else:
+                motions_data = []
+        elif not isinstance(motions_data, list):
+            motions_data = []
+            
+        meeting.motions = motions_data
         meeting.progress = 96
         db.session.commit()
         
