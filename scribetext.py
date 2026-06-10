@@ -22,7 +22,8 @@ model = WhisperModel("base",
                      compute_type="int8")
 
 print(f"Transcribing {audio_file}...")
-segments, info = model.transcribe(audio_file, beam_size=5)
+# Force language='en' to avoid misdetection as Welsh
+segments, info = model.transcribe(audio_file, beam_size=5, language='en')
 
 print(f"Detected language: {info.language} (probability: {info.language_probability:.2f})")
 

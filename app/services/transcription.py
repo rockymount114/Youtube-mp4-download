@@ -19,7 +19,8 @@ def transcribe_meeting(meeting_id):
         # Load model (as per scribetext.py example)
         model = WhisperModel("medium", device="cpu", compute_type="int8")
         
-        segments, info = model.transcribe(audio_path, beam_size=5)
+        # Force English language to avoid misdetection (e.g., Welsh)
+        segments, info = model.transcribe(audio_path, beam_size=5, language="en")
         
         duration = info.duration
         transcript_parts = []

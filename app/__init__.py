@@ -18,6 +18,7 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, '..', 'uploads', 'audio')
+    app.config['POLLING_INTERVAL'] = int(os.getenv('POLLING_INTERVAL', 10))
 
     db.init_app(app)
     
