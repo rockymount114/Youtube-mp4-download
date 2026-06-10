@@ -3,6 +3,7 @@ import subprocess
 import sys
 from markupsafe import Markup
 from html import unescape
+import markdown
 
 try:
     from yt_dlp import YoutubeDL
@@ -18,6 +19,23 @@ from datetime import datetime
 
 main = Blueprint('main', __name__)
 
+@main.app_template_filter('markdown')
+def markdown_filter(text):
+    if not text:
+        return ""
+
+    return Markup(
+        markdown.markdown(
+            unescape(text),
+            extensions=[
+                'tables',
+                'fenced_code',
+                'nl2br',
+                'sane_lists'
+            ]
+        )
+    )
+    
 def start_worker():
     try:
         # Get the path to worker.py in the root directory
@@ -162,20 +180,13 @@ def meeting_status(id):
         'progress': meeting.progress
     })
 
+# markdown rendering for summary and budget notes in meeting detail page
+
 @main.route('/meeting/<int:id>')
 @login_required
 def meeting_detail(id):
     meeting = Meeting.query.get_or_404(id)
-
-    summary_html = ""
-    if meeting.summary:
-        summary_html = Markup(unescape(meeting.summary))
-
-    return render_template(
-        'meeting_detail.html',
-        meeting=meeting,
-        summary_html=summary_html
-    )
+    return render_template('meeting_detail.html', meeting=meeting)
 
 @main.route('/meeting/update_summary/<int:id>', methods=['POST'])
 @login_required
