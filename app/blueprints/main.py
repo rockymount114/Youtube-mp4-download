@@ -1,6 +1,9 @@
 import os
 import subprocess
 import sys
+from markupsafe import Markup
+from html import unescape
+
 try:
     from yt_dlp import YoutubeDL
 except ImportError:
@@ -163,7 +166,16 @@ def meeting_status(id):
 @login_required
 def meeting_detail(id):
     meeting = Meeting.query.get_or_404(id)
-    return render_template('meeting_detail.html', meeting=meeting)
+
+    summary_html = ""
+    if meeting.summary:
+        summary_html = Markup(unescape(meeting.summary))
+
+    return render_template(
+        'meeting_detail.html',
+        meeting=meeting,
+        summary_html=summary_html
+    )
 
 @main.route('/meeting/update_summary/<int:id>', methods=['POST'])
 @login_required
