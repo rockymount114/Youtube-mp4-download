@@ -35,6 +35,31 @@ A Flask-based application for transcribing and analyzing meeting recordings usin
     Open `http://127.0.0.1:5000` in your browser.
     Default login: `admin / admin123`
 
+## Project Structure
+
+```text
+Youtube-mp4-download/
+├── app/                    # Flask Application
+│   ├── blueprints/         # Routes and View Logic
+│   │   ├── auth.py         # Authentication (Login/Logout)
+│   │   └── main.py         # Dashboard, Uploads, Meeting Details
+│   ├── services/           # Business Logic & AI Integrations
+│   │   ├── analysis.py     # Ollama AI Analysis (Summary, Actions, Motions)
+│   │   ├── transcription.py# Faster-Whisper Speech-to-Text
+│   │   └── youtube.py      # Robust YouTube Audio Downloader
+│   ├── static/             # CSS, JS, and Images
+│   ├── templates/          # Jinja2 HTML Templates
+│   ├── __init__.py         # App Factory
+│   └── models.py           # SQLAlchemy Database Models
+├── uploads/                # Storage for audio and transcripts
+├── worker.py               # Background task processor
+├── run.py                  # Web server entry point
+├── main.py                 # Standalone YouTube download utility
+├── requirements.txt        # Python dependencies
+├── ffmpeg.exe              # Audio/Video processing utility
+└── GEMINI.md               # Project development notes
+```
+
 ## Features
 
 - **Audio Upload:** Supports mp3, wav, and m4a.

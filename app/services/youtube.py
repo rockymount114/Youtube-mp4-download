@@ -1,5 +1,6 @@
 import os
-import sys
+import copy
+import glob
 import subprocess
 from datetime import datetime
 try:
@@ -7,47 +8,64 @@ try:
 except ImportError:
     yt_dlp = None
 
-def get_ytdlp_opts(output_path, media_type='mp3', cookie_file=None):
-    """Get yt-dlp options based on media type and cookie settings"""
+# Locate project root (two levels up from this file: app/services/youtube.py -> root)
+_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+
+def _find_ffmpeg():
+    """Return path to ffmpeg: prefer ffmpeg.exe in project root, else system ffmpeg."""
+    local = os.path.join(_ROOT_DIR, 'ffmpeg.exe')
+    return local if os.path.exists(local) else 'ffmpeg'
+
+
+def _validate_cookie_file(path):
+    """Return path only if it is a valid Netscape-format cookie file, else None."""
+    try:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            first_line = f.readline()
+        if '# Netscape HTTP Cookie File' in first_line or '# HTTP Cookie File' in first_line:
+            return path
+        print(f"Warning: '{path}' is not Netscape-formatted (got: {first_line[:60]!r}). Skipping cookies.")
+    except Exception as e:
+        print(f"Warning: Could not read '{path}': {e}")
+    return None
+
+
+def _base_opts(output_path):
+    """Build the base yt-dlp options shared by every call."""
     opts = {
-        'outtmpl': output_path,
+        'outtmpl': output_path or os.path.join(_ROOT_DIR, '%(title)s.%(ext)s'),
         'quiet': True,
         'no_warnings': True,
+        'ffmpeg_location': _find_ffmpeg(),
     }
 
-    # Check for cookies.txt in project root if not provided
-    if not cookie_file:
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-        potential_cookies = os.path.join(root_dir, 'cookies.txt')
-        if os.path.exists(potential_cookies):
-            cookie_file = potential_cookies
+    # Cookies file (auto-detect from project root if not set explicitly)
+    cookie_file = _validate_cookie_file(os.path.join(_ROOT_DIR, 'cookies.txt'))
+    if cookie_file:
+        opts['cookiefile'] = cookie_file
 
-    if cookie_file and os.path.exists(cookie_file):
-        # Validate cookie file format (Netscape format required)
-        try:
-            with open(cookie_file, 'r', encoding='utf-8', errors='ignore') as f:
-                first_line = f.readline()
-                if '# Netscape HTTP Cookie File' in first_line or first_line.startswith('\t') or (first_line.strip() and not first_line.strip().startswith('{')):
-                    opts['cookiefile'] = cookie_file
-                else:
-                    print(f"Warning: {cookie_file} is not Netscape formatted. Skipping.")
-        except Exception as e:
-            print(f"Warning: Could not read {cookie_file}: {e}")
-        
-    # Support cookies from browser via environment variable
-    cookies_browser = os.getenv('COOKIES_BROWSER')
-    if cookies_browser:
-        opts['cookiesfrombrowser'] = (cookies_browser,)
+    # Optional env-var overrides
+    browser = os.getenv('COOKIES_BROWSER')
+    if browser:
+        opts['cookiesfrombrowser'] = (browser,)
 
     po_token = os.getenv('PO_TOKEN')
     if po_token:
         opts['extractor_args'] = {'youtube': {'po_token': [po_token]}}
 
-    # Try to find ffmpeg in project directory
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    ffmpeg_exe = os.path.join(root_dir, 'ffmpeg.exe')
-    if os.path.exists(ffmpeg_exe):
-        opts['ffmpeg_location'] = ffmpeg_exe
+    return opts
+
+
+def get_ytdlp_opts(output_path, media_type='mp3', cookie_file=None):
+    """Public helper kept for backwards-compat. Builds full opts for a given media type."""
+    opts = _base_opts(output_path)
+
+    # Allow an explicit cookie_file override
+    if cookie_file:
+        validated = _validate_cookie_file(cookie_file)
+        if validated:
+            opts['cookiefile'] = validated
 
     if media_type == 'mp3':
         opts.update({
@@ -57,157 +75,165 @@ def get_ytdlp_opts(output_path, media_type='mp3', cookie_file=None):
                 'preferredcodec': 'mp3',
                 'preferredquality': '32',
             }],
-            'extractaudio': True,
-            'audioformat': 'mp3',
-            'audioquality': '32k',
         })
     elif media_type == 'mp4':
         opts.update({
             'format': 'bestvideo+bestaudio/best',
             'merge_output_format': 'mp4',
         })
-    
+
     return opts
 
+
+def _clean_url(url):
+    """Strip playlist parameters from a YouTube URL."""
+    for sep in ('&list=', '?list='):
+        if sep in url:
+            url = url.split(sep)[0]
+    return url
+
+
 def try_download_with_clients(url, ydl_opts, download=True):
-    """Try downloading with different client configurations to bypass DRM/Bot detection"""
+    """Try downloading/extracting info with several player clients in sequence."""
     if not yt_dlp:
         raise ImportError("yt-dlp is not installed")
 
-    # Clean URL (remove playlist params)
-    if '&list=' in url:
-        url = url.split('&list=')[0]
-    elif '?list=' in url:
-        url = url.split('?list=')[0]
+    url = _clean_url(url)
 
-    # Priority order: android is currently most resilient, followed by web and ios
     clients_to_try = [
-        {'player_client': ['android']},
-        {'player_client': ['web']},
-        {'player_client': ['ios']},
-        {'player_client': ['mweb']},
-        {'player_client': ['web', 'ios']},
+        ['android'],
+        ['web'],
+        ['ios'],
+        ['mweb'],
+        ['web', 'ios'],
     ]
-    
-    last_error = ""
-    for i, client_args in enumerate(clients_to_try):
-        opts = ydl_opts.copy()
-        if 'extractor_args' not in opts:
-            opts['extractor_args'] = {}
-        
-        # Ensure we don't overwrite existing youtube extractor args like po_token
-        yt_args = opts['extractor_args'].get('youtube', {})
-        if not isinstance(yt_args, dict):
-            yt_args = {}
-        else:
-            yt_args = yt_args.copy()
-            
-        yt_args.update(client_args)
+
+    last_error = ''
+    for player_client in clients_to_try:
+        # Deep-copy so postprocessors list and nested dicts aren't shared across attempts
+        opts = copy.deepcopy(ydl_opts)
+        yt_args = opts.setdefault('extractor_args', {}).get('youtube', {})
+        yt_args = dict(yt_args)  # copy nested dict
+        yt_args['player_client'] = player_client
         opts['extractor_args']['youtube'] = yt_args
-        
+
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=download)
         except Exception as e:
             last_error = str(e)
-            print(f"Client {client_args} failed: {last_error}")
-            # If it's a common bypassable error, try next client
-            if any(msg in last_error.lower() for msg in ["drm", "403", "not available", "po token", "requested format", "sign in"]):
-                continue
-            # For other errors, we still try next client as it might be client-specific
+            print(f"Client {player_client} failed: {last_error}")
             continue
-    
-    # Final attempt with default settings if all specific clients fail
+
+    # Final attempt with unmodified opts
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(copy.deepcopy(ydl_opts)) as ydl:
             return ydl.extract_info(url, download=download)
     except Exception as e:
         if download:
-            raise Exception(f"YouTube download failed after multiple bypass attempts: {e}")
-        else:
-            # For metadata fetching, return None instead of raising if it fails
-            return None
+            raise Exception(f"YouTube download failed after all attempts: {e}")
+        return None
+
 
 def get_video_info(url):
-    """Fetch video title and upload date using robust clients"""
+    """Fetch video metadata (title, upload_date) without downloading."""
     if not yt_dlp:
         return None
 
-    # Get standard options which include cookies and PO_TOKEN
-    ydl_opts = get_ytdlp_opts('', 'mp3')
-    ydl_opts.update({
-        'skip_download': True,
-        'quiet': True,
-        'no_warnings': True,
-    })
-    
-    return try_download_with_clients(url, ydl_opts, download=False)
+    opts = _base_opts('')          # empty outtmpl — no file will be written
+    opts['skip_download'] = True   # belt-and-suspenders: skip even if outtmpl is set
+
+    return try_download_with_clients(url, opts, download=False)
+
 
 def download_youtube_audio(url, output_folder):
-    """Main entry point for downloading YouTube audio with robust logic"""
+    """
+    Download a YouTube video as a 32 kbps MP3 into output_folder.
+    Returns the filename (not full path) of the saved MP3.
+
+    Strategy:
+      1. Ask yt-dlp to extract audio directly to MP3 via FFmpegExtractAudio.
+         yt-dlp replaces %(ext)s with the *post-processed* extension, so the
+         output file will be <base>.mp3 when FFmpeg is available.
+      2. If that produces no .mp3 (FFmpeg missing / yt-dlp left a raw container),
+         glob for any file with our base name and convert it with FFmpeg directly.
+      3. If all else fails, raise so the caller can mark the meeting as Error with
+         a useful message.
+    """
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename_base = f"{timestamp}_youtube"
-    
-    # Try direct MP3 download first
+    final_mp3 = os.path.join(output_folder, f"{filename_base}.mp3")
+
+    # --- Attempt 1: yt-dlp MP3 extraction via FFmpegExtractAudio ---
     try:
         output_template = os.path.join(output_folder, f"{filename_base}.%(ext)s")
         ydl_opts = get_ytdlp_opts(output_template, 'mp3')
         try_download_with_clients(url, ydl_opts, download=True)
-        
-        # Check if the file was created
-        mp3_file = os.path.join(output_folder, f"{filename_base}.mp3")
-        if os.path.exists(mp3_file):
-            return f"{filename_base}.mp3"
-    except Exception as e:
-        print(f"Direct MP3 download failed: {e}. Trying MP4 fallback...")
 
-    # Fallback: Download MP4 and convert to MP3 manually
+        if os.path.exists(final_mp3):
+            print(f"MP3 download complete: {final_mp3}")
+            return f"{filename_base}.mp3"
+
+        # yt-dlp may have saved a raw audio container (webm/m4a/opus) if FFmpeg
+        # post-processing was skipped.  Find and convert it.
+        raw_files = [
+            f for f in glob.glob(os.path.join(output_folder, f"{filename_base}.*"))
+            if not f.endswith('.mp3') and not f.endswith('.part') and not f.endswith('.ytdl')
+        ]
+        if raw_files:
+            raw_file = raw_files[0]
+            print(f"FFmpeg post-processing was skipped by yt-dlp; converting {raw_file} manually...")
+            _ffmpeg_convert(raw_file, final_mp3)
+            if os.path.exists(final_mp3):
+                _safe_remove(raw_file)
+                return f"{filename_base}.mp3"
+
+    except Exception as e:
+        print(f"Attempt 1 (direct MP3) failed: {e}. Falling back to MP4 download…")
+
+    # --- Attempt 2: download MP4, then extract audio with FFmpeg ---
     try:
-        output_template = os.path.join(output_folder, f"{filename_base}_temp.%(ext)s")
+        temp_base = f"{filename_base}_temp"
+        output_template = os.path.join(output_folder, f"{temp_base}.%(ext)s")
         ydl_opts = get_ytdlp_opts(output_template, 'mp4')
         info = try_download_with_clients(url, ydl_opts, download=True)
-        
-        # Find the downloaded file (it might have a different extension than mp4 depending on merge)
-        ext = info.get('ext', 'mp4')
-        temp_file = os.path.join(output_folder, f"{filename_base}_temp.{ext}")
-        final_mp3 = os.path.join(output_folder, f"{filename_base}.mp3")
 
-        if not os.path.exists(temp_file):
-            # Try to find it by glob if template didn't match exactly for some reason
-            import glob
-            matches = glob.glob(os.path.join(output_folder, f"{filename_base}_temp.*"))
-            if matches:
-                temp_file = matches[0]
-            else:
-                raise Exception("Could not find downloaded video file for conversion")
-
-        # Convert to MP3
-        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-        ffmpeg_exe = os.path.join(root_dir, 'ffmpeg.exe')
-        if not os.path.exists(ffmpeg_exe):
-            ffmpeg_exe = 'ffmpeg'
-
-        cmd = [
-            ffmpeg_exe,
-            '-i', temp_file,
-            '-b:a', '32k',
-            '-vn',
-            '-y',
-            final_mp3
+        # Locate the downloaded file
+        temp_files = [
+            f for f in glob.glob(os.path.join(output_folder, f"{temp_base}.*"))
+            if not f.endswith('.part') and not f.endswith('.ytdl')
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        # Cleanup temp file
-        if os.path.exists(temp_file):
-            try: os.remove(temp_file)
-            except: pass
-            
-        if result.returncode == 0 and os.path.exists(final_mp3):
+        if not temp_files:
+            raise Exception("Could not locate downloaded MP4 file")
+
+        temp_file = temp_files[0]
+        _ffmpeg_convert(temp_file, final_mp3)
+
+        if os.path.exists(final_mp3):
+            _safe_remove(temp_file)
             return f"{filename_base}.mp3"
         else:
-            raise Exception(f"FFmpeg conversion failed: {result.stderr}")
-            
+            raise Exception("FFmpeg produced no output file")
+
     except Exception as e:
-        raise Exception(f"YouTube download and fallback failed: {e}")
+        raise Exception(f"YouTube download failed (both attempts): {e}")
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _ffmpeg_convert(src, dst_mp3):
+    """Convert src audio/video file to a 32 kbps MP3 at dst_mp3 using FFmpeg."""
+    ffmpeg = _find_ffmpeg()
+    cmd = [ffmpeg, '-i', src, '-b:a', '32k', '-vn', '-y', dst_mp3]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception(f"FFmpeg error: {result.stderr[-500:]}")  # last 500 chars
+
+
+def _safe_remove(path):
+    try:
+        os.remove(path)
+    except Exception:
+        pass
