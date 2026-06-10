@@ -10,6 +10,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required
 from werkzeug.utils import secure_filename
 from ..models import Meeting, db
+from ..services.youtube import download_youtube_audio, get_video_info
 from datetime import datetime
 
 main = Blueprint('main', __name__)
@@ -80,31 +81,9 @@ def upload():
         filename = None
 
         if youtube_url:
-            if not YoutubeDL:
-                flash('YouTube downloader (yt-dlp) is not installed. Please contact administrator.')
-                return redirect(url_for('main.upload'))
-                
-            # Download YouTube audio
+            # Download YouTube audio using robust service
             try:
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename_base = f"{timestamp}_youtube"
-                output_template = os.path.join(current_app.config['UPLOAD_FOLDER'], f"{filename_base}.%(ext)s")
-                
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '192',
-                    }],
-                    'outtmpl': output_template,
-                    'quiet': True,
-                }
-                
-                with YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([youtube_url])
-                
-                filename = f"{filename_base}.mp3"
+                filename = download_youtube_audio(youtube_url, current_app.config['UPLOAD_FOLDER'])
             except Exception as e:
                 flash(f'Error downloading YouTube audio: {str(e)}')
                 return redirect(url_for('main.upload'))
@@ -137,27 +116,23 @@ def fetch_youtube_info():
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
         
-    if not YoutubeDL:
-        return jsonify({'error': 'yt-dlp not installed on server'}), 500
-
     try:
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-        }
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            upload_date = info.get('upload_date') # YYYYMMDD
-            formatted_date = None
-            if upload_date:
-                formatted_date = datetime.strptime(upload_date, '%Y%m%d').strftime('%Y-%m-%d')
-                
-            return jsonify({
-                'title': info.get('title'),
-                'date': formatted_date
-            })
+        info = get_video_info(url)
+        if not info:
+            return jsonify({'error': 'YouTube bypass failed. Please check your cookies.txt or try a different video.'}), 422
+            
+        upload_date = info.get('upload_date') # YYYYMMDD
+        formatted_date = None
+        if upload_date:
+            formatted_date = datetime.strptime(upload_date, '%Y%m%d').strftime('%Y-%m-%d')
+            
+        return jsonify({
+            'title': info.get('title'),
+            'date': formatted_date
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @main.route('/meeting/process/<int:id>', methods=['POST'])
 @login_required
