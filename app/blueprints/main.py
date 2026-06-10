@@ -190,6 +190,16 @@ def meeting_detail(id):
     meeting = Meeting.query.get_or_404(id)
     return render_template('meeting_detail.html', meeting=meeting)
 
+@main.route('/meeting/update_summary/<int:id>', methods=['POST'])
+@login_required
+def update_ai_summary(id):
+    meeting = Meeting.query.get_or_404(id)
+    ai_summary = request.form.get('ai_summary')
+    meeting.ai_summary = ai_summary
+    db.session.commit()
+    flash('AI Summary updated successfully')
+    return redirect(url_for('main.meeting_detail', id=id))
+
 @main.route('/meeting/delete/<int:id>', methods=['POST'])
 @login_required
 def delete_meeting(id):

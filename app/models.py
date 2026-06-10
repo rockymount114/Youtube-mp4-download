@@ -18,6 +18,7 @@ class Meeting(db.Model):
     audio_file = db.Column(db.String(1000), nullable=True)
     transcript = db.Column(db.Text, nullable=True)
     summary = db.Column(db.Text, nullable=True)
+    ai_summary = db.Column(db.Text, nullable=True)
     action_items = db.Column(db.JSON, nullable=True)
     motions = db.Column(db.JSON, nullable=True)
     budget_notes = db.Column(db.Text, nullable=True)
