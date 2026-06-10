@@ -42,13 +42,21 @@ Youtube-mp4-download/
 ├── app/                    # Flask Application
 │   ├── blueprints/         # Routes and View Logic
 │   │   ├── auth.py         # Authentication (Login/Logout)
-│   │   └── main.py         # Dashboard, Uploads, Meeting Details
+│   │   ├── main.py         # Dashboard, Uploads, Meeting Details
+│   │   └── users.py        # User Management (Add, Reset, Delete)
 │   ├── services/           # Business Logic & AI Integrations
 │   │   ├── analysis.py     # Ollama AI Analysis (Summary, Actions, Motions)
 │   │   ├── transcription.py# Faster-Whisper Speech-to-Text
 │   │   └── youtube.py      # Robust YouTube Audio Downloader
 │   ├── static/             # CSS, JS, and Images
 │   ├── templates/          # Jinja2 HTML Templates
+│   │   ├── base.html
+│   │   ├── dashboard.html
+│   │   ├── login.html
+│   │   ├── manage_users.html
+│   │   ├── meeting_detail.html
+│   │   ├── meeting_list.html
+│   │   └── upload.html
 │   ├── __init__.py         # App Factory
 │   └── models.py           # SQLAlchemy Database Models
 ├── uploads/                # Storage for audio and transcripts

@@ -37,4 +37,7 @@ def create_app():
     from .blueprints.auth import auth as auth_blueprint
     app.register_blueprint(auth_blueprint)
 
+    from .blueprints.users import users as users_blueprint
+    app.register_blueprint(users_blueprint)
+
     return app

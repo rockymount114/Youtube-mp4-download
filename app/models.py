@@ -8,6 +8,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(255), unique=True, nullable=False)
     password = db.Column(db.String(500), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
 
 class Meeting(db.Model):
     __tablename__ = 'meetings'

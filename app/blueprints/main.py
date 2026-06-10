@@ -158,6 +158,10 @@ def fetch_youtube_info():
 @main.route('/meeting/process/<int:id>', methods=['POST'])
 @login_required
 def process_meeting(id):
+    if not current_user.is_admin:
+        flash('Admin privileges required.')
+        return redirect(url_for('main.meeting_list'))
+        
     meeting = Meeting.query.get_or_404(id)
     meeting.status = 'Pending'
     meeting.progress = 0
@@ -201,6 +205,10 @@ def update_ai_summary(id):
 @main.route('/meeting/delete/<int:id>', methods=['POST'])
 @login_required
 def delete_meeting(id):
+    if not current_user.is_admin:
+        flash('Admin privileges required.')
+        return redirect(url_for('main.meeting_list'))
+        
     meeting = Meeting.query.get_or_404(id)
     if meeting.audio_file:
         file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], meeting.audio_file)
