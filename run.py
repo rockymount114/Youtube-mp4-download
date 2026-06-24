@@ -52,4 +52,4 @@ if __name__ == '__main__':
             db.session.commit()
             print("Admin rights granted to existing 'admin' user.")
             
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5500)
