@@ -10,8 +10,9 @@ try:
 except ImportError:
     YoutubeDL = None
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify
-from flask_login import login_required
+import io
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, jsonify, send_file
+from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from ..models import Meeting, db
 from ..services.youtube import download_youtube_audio, get_video_info
@@ -202,6 +203,33 @@ def update_ai_summary(id):
     flash('AI Summary updated successfully')
     return redirect(url_for('main.meeting_detail', id=id))
 
+@main.route('/meeting/<int:id>/download_transcript')
+@login_required
+def download_transcript(id):
+    meeting = Meeting.query.get_or_404(id)
+    if not meeting.transcript:
+        flash('No transcript available for this meeting.', 'error')
+        return redirect(url_for('main.meeting_detail', id=id))
+
+    base_name = os.path.splitext(meeting.audio_file)[0] if meeting.audio_file else f"meeting_{meeting.id}"
+    filename = f"{base_name}.md"
+    file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+
+    if os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True, download_name=filename, mimetype='text/markdown')
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(meeting.transcript)
+        return send_file(file_path, as_attachment=True, download_name=filename, mimetype='text/markdown')
+    except Exception:
+        return send_file(
+            io.BytesIO(meeting.transcript.encode('utf-8')),
+            as_attachment=True,
+            download_name=filename,
+            mimetype='text/markdown'
+        )
+
 @main.route('/meeting/delete/<int:id>', methods=['POST'])
 @login_required
 def delete_meeting(id):
@@ -214,6 +242,15 @@ def delete_meeting(id):
         file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], meeting.audio_file)
         if os.path.exists(file_path):
             os.remove(file_path)
+            
+        base_name = os.path.splitext(meeting.audio_file)[0]
+        md_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"{base_name}.md")
+        if os.path.exists(md_path):
+            os.remove(md_path)
+
+        legacy_txt_path = os.path.join(current_app.config['UPLOAD_FOLDER'], f"{meeting.audio_file}.txt")
+        if os.path.exists(legacy_txt_path):
+            os.remove(legacy_txt_path)
             
     db.session.delete(meeting)
     db.session.commit()
